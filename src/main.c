@@ -6,8 +6,23 @@
 #include <stdio.h>
 
 #define PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE
+#define PIN_LMB 16
+#define PIN_RMB 17
 
 void hid_task();
+
+void pin_init(uint pin)
+{
+    gpio_init(pin);
+    gpio_set_dir(pin, GPIO_IN);
+    gpio_pull_up(pin);
+}
+
+void pins_init(void)
+{
+    pin_init(PIN_LMB);
+    pin_init(PIN_RMB);
+}
 
 int main()
 {
@@ -15,6 +30,7 @@ int main()
     stdio_init_all();
     pmw3360_init();
     board_init();
+    pins_init();
 
     tusb_init();
 
@@ -50,7 +66,10 @@ void hid_task(void)
             return;
         int16_t dx, dy;
         pmw3360_get_deltas(&dx, &dy);
-        tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, -dx, -dy, 0, 0);
+        uint8_t buttons = 0x00;
+        buttons |= (!gpio_get(PIN_LMB) << 0);
+        buttons |= (!gpio_get(PIN_RMB) << 1);
+        tud_hid_mouse_report(REPORT_ID_MOUSE, buttons, -dx, -dy, 0, 0);
     }
 }
 
