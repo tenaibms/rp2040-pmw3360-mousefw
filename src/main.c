@@ -6,8 +6,12 @@
 #include <stdio.h>
 
 #define PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE
+
 #define PIN_LMB 16
 #define PIN_RMB 17
+
+#define PIN_ENCODER_A 18
+#define PIN_ENCODER_B 19
 
 void hid_task();
 
@@ -22,6 +26,9 @@ void pins_init(void)
 {
     pin_init(PIN_LMB);
     pin_init(PIN_RMB);
+
+    pin_init(PIN_ENCODER_A);
+    pin_init(PIN_ENCODER_B);
 }
 
 int main()
@@ -45,10 +52,38 @@ void tud_unmount_cb(void) { }
 void tud_suspend_cb(bool remote_wakeup_en) { (void)remote_wakeup_en; }
 void tud_resume_cb(void) { }
 
+int8_t wheel_progress = 0;
+uint8_t wheel_state_a = 0;
+uint8_t wheel_state_b = 0;
+uint8_t wheel_state_output = 0;
+
+void update_wheel()
+{
+    uint8_t wheel_new_a = gpio_get(PIN_ENCODER_A);
+    uint8_t wheel_new_b = gpio_get(PIN_ENCODER_B);
+
+    if (wheel_new_a != wheel_state_a || wheel_new_b != wheel_state_b) {
+        if (wheel_new_a == wheel_new_b && wheel_state_output != wheel_new_a) {
+            // when scrolling up, B changes first. when scrolling down, A changes first
+            if (wheel_new_b == wheel_state_b)
+                wheel_progress += 1;
+            // the wheel can glitch and jump straight from 00 to 11 (or vice versa)
+            // so we need to check that only one state has changed since the last test
+            else if(wheel_new_a == wheel_state_a)
+                wheel_progress -= 1;
+            
+            wheel_state_output = wheel_new_a;
+        }
+        
+        wheel_state_a = wheel_new_a;
+        wheel_state_b = wheel_new_b;
+    }  
+}
+
 void hid_task(void)
 {
     // Poll every 10ms
-    const uint32_t interval_ms = 10;
+    const uint32_t interval_ms = 2;
     static uint32_t start_ms = 0;
 
     if (board_millis() - start_ms < interval_ms)
@@ -62,6 +97,7 @@ void hid_task(void)
         tud_remote_wakeup();
     } else {
         // Send the 1st of report chain, the rest will be sent by tud_hid_report_complete_cb()
+        update_wheel();
         if (!tud_hid_ready())
             return;
         int16_t dx, dy;
@@ -69,7 +105,9 @@ void hid_task(void)
         uint8_t buttons = 0x00;
         buttons |= (!gpio_get(PIN_LMB) << 0);
         buttons |= (!gpio_get(PIN_RMB) << 1);
-        tud_hid_mouse_report(REPORT_ID_MOUSE, buttons, -dx, -dy, 0, 0);
+        int8_t wheel = wheel_progress;
+        wheel_progress = 0;
+        tud_hid_mouse_report(REPORT_ID_MOUSE, buttons, -dx, -dy, wheel, 0);
     }
 }
 
