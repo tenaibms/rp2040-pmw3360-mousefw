@@ -9,11 +9,15 @@ project(blink C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
+set(PICO_ENTER_USB_BOOT_ON_EXIT 1)
+set(PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE 1)
+
 # Creates a pico-sdk subdirectory in our project for the libraries
 pico_sdk_init()
 
 # Tell CMake where to find the executable source file
-add_executable(${PROJECT_NAME} 
+add_executable(${PROJECT_NAME}
     src/main.c
     src/pmw3360.c
     src/srom.c
@@ -26,8 +30,8 @@ target_include_directories(blink PUBLIC src)
 pico_add_extra_outputs(${PROJECT_NAME})
 
 # Link to pico_stdlib (gpio, time, etc. functions)
-target_link_libraries(${PROJECT_NAME} 
-    pico_stdlib 
+target_link_libraries(${PROJECT_NAME}
+    pico_stdlib
     hardware_spi
     tinyusb_device
     tinyusb_board

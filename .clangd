@@ -1,0 +1,4 @@
+CompileFlags: # Tweak the parse settings, example directory given to show format
+  CompilationDatabase: build/
+  Add:
+    - "-IC:\\msys64\\ucrt64\\arm-none-eabi\\include"

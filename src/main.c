@@ -1,17 +1,18 @@
 #include "bsp/board_api.h"
+#include "class/hid/hid_device.h"
 #include "pico/stdlib.h"
+#include "pico/bootrom.h"
 #include "pmw3360.h"
 #include "tusb.h"
 #include "usb_descriptors.h"
+#include <pico/time.h>
 #include <stdio.h>
-
-#define PICO_STDIO_USB_ENABLE_RESET_VIA_VENDOR_INTERFACE
 
 #define PIN_LMB 16
 #define PIN_RMB 17
 
-#define PIN_ENCODER_A 18
-#define PIN_ENCODER_B 19
+#define PIN_ENCODER_A 21
+#define PIN_ENCODER_B 23
 
 void hid_task();
 
@@ -71,19 +72,18 @@ void update_wheel()
             // so we need to check that only one state has changed since the last test
             else if(wheel_new_a == wheel_state_a)
                 wheel_progress -= 1;
-            
+
             wheel_state_output = wheel_new_a;
         }
-        
         wheel_state_a = wheel_new_a;
         wheel_state_b = wheel_new_b;
-    }  
+    }
 }
 
 void hid_task(void)
 {
     // Poll every 10ms
-    const uint32_t interval_ms = 2;
+    const uint32_t interval_ms = 10;
     static uint32_t start_ms = 0;
 
     if (board_millis() - start_ms < interval_ms)
@@ -96,18 +96,16 @@ void hid_task(void)
         // and REMOTE_WAKEUP feature is enabled by host
         tud_remote_wakeup();
     } else {
-        // Send the 1st of report chain, the rest will be sent by tud_hid_report_complete_cb()
-        update_wheel();
-        if (!tud_hid_ready())
-            return;
-        int16_t dx, dy;
-        pmw3360_get_deltas(&dx, &dy);
-        uint8_t buttons = 0x00;
-        buttons |= (!gpio_get(PIN_LMB) << 0);
-        buttons |= (!gpio_get(PIN_RMB) << 1);
-        int8_t wheel = wheel_progress;
-        wheel_progress = 0;
-        tud_hid_mouse_report(REPORT_ID_MOUSE, buttons, -dx, -dy, wheel, 0);
+        if(tud_hid_n_ready(0)) {
+            int16_t dx, dy;
+            pmw3360_get_deltas(&dx, &dy);
+            uint8_t buttons = 0x00;
+            buttons |= (!gpio_get(PIN_LMB) << 0);
+            buttons |= (!gpio_get(PIN_RMB) << 1);
+            int8_t wheel = wheel_progress;
+            wheel_progress = 0;
+            tud_hid_n_mouse_report(0, REPORT_ID_MOUSE, buttons, -dx, -dy, wheel, 0);
+        }
     }
 }
 
@@ -130,11 +128,28 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_t
     return 0;
 }
 
+const char reset_string[] = "Restarted";
+const char set_cpi_string[] = "Set CPI";
+const char unknown_report_string[] = "Unknown report type";
+
+char message_buffer[64];
+
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize)
 {
     (void)instance;
-    (void)report_id;
     (void)report_type;
-    (void)buffer;
-    (void)bufsize;
+    switch(buffer[0]) {
+    case 0:
+        pmw3360_set_cpi(buffer[1] * 100);
+        sprintf(message_buffer, "%s %i", set_cpi_string, buffer[1] * 100);
+        break;
+    case 1:
+        sprintf(message_buffer, "%s", reset_string);
+        tud_hid_n_report(1, 0, message_buffer, 64);
+        sleep_ms(1000);
+        reset_usb_boot(1<<PICO_DEFAULT_LED_PIN,0);
+    default:
+        sprintf(message_buffer, "%s", unknown_report_string);
+    }
+    tud_hid_n_report(1, 0, message_buffer, 64);
 }
